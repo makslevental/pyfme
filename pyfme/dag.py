@@ -25,22 +25,24 @@ import multiprocessing
 import os
 import sympy
 
-from cone import PivotSet, Cone
-from sign import UnknownSign
+from .cone import PivotSet, Cone
+from .sign import UnknownSign
 
 
 def elim_cost_to_dhm(score):
     mn = score / 200
     dhm = (mn / 60 / 24, mn / 60 % 24, mn % 60)
-    return \
-        ("%d d " % dhm[0] if dhm[0] > 0 else "") + \
-        ("%d h " % dhm[1] if dhm[1] > 0 else "") + \
-        "%d min" % dhm[2]
+    return (
+        ("%d d " % dhm[0] if dhm[0] > 0 else "")
+        + ("%d h " % dhm[1] if dhm[1] > 0 else "")
+        + "%d min" % dhm[2]
+    )
 
 
 class SignSet(object):
-
-    def __init__(self, signs=[]):
+    def __init__(self, signs=None):
+        if signs is None:
+            signs = []
         self.signs = set()
         self.extend(signs)
 
@@ -60,12 +62,11 @@ class SignSet(object):
     def __iter__(self):
         return self.signs.__iter__()
 
-    def next(self):
-        return self.signs.next()
+    def __next__(self):
+        return next(iter(self.signs))
 
 
 class UnknownSigns(object):
-
     def __init__(self, signs):
         self.signs = SignSet(signs)
 
@@ -81,10 +82,17 @@ def reduction_node_recompute_pivots_map(args):
 
 
 class ReductionNode(object):
-
-    def __init__(self, node_id, cone, parent, parent_pivot_col=None,
-                 parent_sign_expr=None, imbert_effect=None, elim_order=None,
-                 compute_pivots=True):
+    def __init__(
+        self,
+        node_id,
+        cone,
+        parent,
+        parent_pivot_col=None,
+        parent_sign_expr=None,
+        imbert_effect=None,
+        elim_order=None,
+        compute_pivots=True,
+    ):
         self.cone = cone
         self.dotted = False
         self.elim_order = [] if elim_order is None else elim_order
@@ -103,9 +111,15 @@ class ReductionNode(object):
 
     def copy(self):
         copycat = ReductionNode(
-            self.node_id, self.cone, self.parent, self.parent_pivot_col,
-            self.parent_sign_expr, self.imbert_effect, self.elim_order,
-            compute_pivots=False)
+            self.node_id,
+            self.cone,
+            self.parent,
+            self.parent_pivot_col,
+            self.parent_sign_expr,
+            self.imbert_effect,
+            self.elim_order,
+            compute_pivots=False,
+        )
         copycat.not_pivoted = copy.copy(self.not_pivoted)
         copycat.sons = copy.copy(self.sons)
         return copycat
@@ -119,10 +133,10 @@ class ReductionNode(object):
         return len(self.sons) < 1
 
     def get_var_elim_order(self):
-        if 'elim_order' in self.__dict__:
+        if "elim_order" in self.__dict__:
             pass
         else:  # TMP
-            print "Reconstructing node(%d).elim_order..." % self.node_id
+            print("Reconstructing node(%d).elim_order..." % self.node_id)
             if self.parent is None:  # root node
                 self.elim_order = []
             elif self.parent_pivot_col is None:  # assumption node
@@ -141,19 +155,25 @@ class ReductionNode(object):
 
     @property
     def available_pivots(self):
-        return [(pivot_col, pivot_set)
-                for pivot_col, pivot_set in self.not_pivoted.iteritems()
-                if type(pivot_set) is PivotSet]
+        return [
+            (pivot_col, pivot_set)
+            for pivot_col, pivot_set in self.not_pivoted.items()
+            if type(pivot_set) is PivotSet
+        ]
 
     def get_pivot_cols(self):
-        return [pivot_col
-                for pivot_col, pivot_set in self.not_pivoted.iteritems()
-                if type(pivot_set) is PivotSet]
+        return [
+            pivot_col
+            for pivot_col, pivot_set in self.not_pivoted.items()
+            if type(pivot_set) is PivotSet
+        ]
 
     def get_usign_cols(self):
-        return [(pivot_col, x.signs)
-                for pivot_col, x in self.not_pivoted.iteritems()
-                if type(x) is UnknownSigns]
+        return [
+            (pivot_col, x.signs)
+            for pivot_col, x in self.not_pivoted.items()
+            if type(x) is UnknownSigns
+        ]
 
     def get_all_unknown_signs(self):
         signs = SignSet()
@@ -162,11 +182,17 @@ class ReductionNode(object):
         return signs
 
     def nb_pivots_needing(self, sign_expr):
-        return len([1 for pivot_col, pivot_signs in self.get_usign_cols()
-                    if sign_expr in pivot_signs])
+        return len(
+            [
+                1
+                for pivot_col, pivot_signs in self.get_usign_cols()
+                if sign_expr in pivot_signs
+            ]
+        )
 
     def find_best_test(self, pivot_col, base_symbols):
-        from sign import eval_sign
+        from .sign import eval_sign
+
         pivot_signs = self.not_pivoted[pivot_col].signs
         # pivot_signs = self.get_all_unknown_signs()
 
@@ -197,14 +223,16 @@ class ReductionNode(object):
                 if r not in candidate_signs and self.cone.has_unknown_sign(r):
                     candidate_signs.add(r)
 
-        l = sorted([(cs, sign_score(cs)) for cs in candidate_signs], key=lambda
-                   x: -(x[1][0] * x[1][1]))
+        l = sorted(
+            [(cs, sign_score(cs)) for cs in candidate_signs],
+            key=lambda x: -(x[1][0] * x[1][1]),
+        )
         for (cs, score) in l:
-            print "(%2d, %2d): %s" % (score[0], score[1], cs)
+            print("(%2d, %2d): %s" % (score[0], score[1], cs))
         return l[0][0]
 
     def expansion_if_elim(self, var_id):
-        for pivot_col, x in self.not_pivoted.iteritems():
+        for pivot_col, x in self.not_pivoted.items():
             if self.cone.input_ids[pivot_col] == var_id:
                 if type(x) is not PivotSet:
                     raise x
@@ -212,10 +240,10 @@ class ReductionNode(object):
         return 0
 
     def has_pivots(self):
-        for pivot_col, pivot_set in self.not_pivoted.iteritems():
+        for pivot_col, pivot_set in self.not_pivoted.items():
             if type(pivot_set) is PivotSet:
                 return True
-        for son in self.sons.itervalues():
+        for son in self.sons.values():
             if son.has_pivots():
                 return True
         return False
@@ -225,7 +253,7 @@ class ReductionNode(object):
         self.not_pivoted = {}
         nb_proc = self.cone.nb_inputs
         pool = multiprocessing.Pool(nb_proc + 1)
-        args = ((self.cone, pcol) for pcol in xrange(self.cone.nb_inputs))
+        args = ((self.cone, pcol) for pcol in range(self.cone.nb_inputs))
         res_it = pool.imap_unordered(reduction_node_recompute_pivots_map, args)
         for x in res_it:
             pivot_col, pivot_set = x
@@ -239,16 +267,23 @@ class ReductionNode(object):
         worst_case_size = pivot_set.worst_case_size
         son_cone = pivot_set.compute_cone()
         node = ReductionNode(
-            next_id, son_cone, parent=self, parent_pivot_col=pivot_col,
+            next_id,
+            son_cone,
+            parent=self,
+            parent_pivot_col=pivot_col,
             imbert_effect=(worst_case_size, len(son_cone.rows)),
-            elim_order=self.elim_order + [var_id])
+            elim_order=self.elim_order + [var_id],
+        )
         self.sons[pivot_col] = node
         self.remove_unknown_pivots()
         return node
 
     def remove_unknown_pivots(self):
-        del_keys = [pivot_col for pivot_col, x in self.not_pivoted.iteritems()
-                    if type(x) is not PivotSet]
+        del_keys = [
+            pivot_col
+            for pivot_col, x in self.not_pivoted.items()
+            if type(x) is not PivotSet
+        ]
         for k in del_keys:
             del self.not_pivoted[k]
 
@@ -257,10 +292,15 @@ class ReductionNode(object):
             cone = self.cone.copy()
             cone.add_pos_assumption(sign_expr)
             node = ReductionNode(
-                next_id, cone, self, parent_sign_expr=sign_expr,
-                elim_order=self.elim_order)
+                next_id,
+                cone,
+                self,
+                parent_sign_expr=sign_expr,
+                elim_order=self.elim_order,
+            )
             self.sons["%s >= 0" % sign_expr] = node
             return node
+
         assert not self.sons, "Node %d has descendants already" % self.node_id
         node1 = append_son(+sign_expr, next_id1)
         node2 = append_son(-sign_expr, next_id2)
@@ -293,21 +333,22 @@ class ReductionNode(object):
         if write_self:
             next_str, next_id = self.pivots_to_dot(next_id)
             dot_str = self.dot_str + next_str
-        for pivot_col, son in self.sons.iteritems():
+        for pivot_col, son in self.sons.items():
             if son.parent_pivot_col is not None:
                 var_id = self.cone.input_ids[pivot_col]
-                edge_str = "  %d -> %d [label=\"z%d\"];\n" % (
-                    self.node_id, son.node_id, var_id)
-                next_str, next_id = son.to_dot(
-                    next_id, leaves_only=leaves_only)
+                edge_str = '  %d -> %d [label="z%d"];\n' % (
+                    self.node_id,
+                    son.node_id,
+                    var_id,
+                )
+                next_str, next_id = son.to_dot(next_id, leaves_only=leaves_only)
                 dot_str += (edge_str if write_self else "") + next_str
             elif son.parent_sign_expr:
                 sign_expr = son.parent_sign_expr
                 edge_str = "  %d -> %d [" % (self.node_id, son.node_id)
                 edge_str += "color=blue,fontcolor=blue,"
-                edge_str += "label=\"(%s >= 0)\"];\n" % str(sign_expr)
-                next_str, next_id = son.to_dot(
-                    next_id, leaves_only=leaves_only)
+                edge_str += 'label="(%s >= 0)"];\n' % str(sign_expr)
+                next_str, next_id = son.to_dot(next_id, leaves_only=leaves_only)
                 dot_str += (edge_str if write_self else "") + next_str
         self.dotted = True
         return dot_str, next_id
@@ -319,18 +360,28 @@ class ReductionNode(object):
         elim_label = ", ".join(["z%d" % i for i in self.elim_order])
         if elim_label:
             label += "Eliminated %s\\n" % elim_label
-        if 'sign_count' in self.cone.__dict__:  # kron
+        if "sign_count" in self.cone.__dict__:  # kron
             label += "\\nSigns:\\n"
-            for input_id, d in self.cone.sign_count.iteritems():
+            for input_id, d in self.cone.sign_count.items():
                 label += "z%d: %3d+ / %3d- / %3dz / %3d? / %3d?u\\n" % (
-                    input_id, d['+'], d['-'], d['0'], d['?'], d['?u'])
-        if 'elim_cost' not in self.__dict__:
+                    input_id,
+                    d["+"],
+                    d["-"],
+                    d["0"],
+                    d["?"],
+                    d["?u"],
+                )
+        if "elim_cost" not in self.__dict__:
             self.elim_cost = {}
         if self.elim_cost:
             label += "\\nElim. costs:\\n"
-            label += "\\n".join(["z%d: +%d (%d p / %s)" % (
-                k, v, self.elim_pivots[k], elim_cost_to_dhm(v))
-                for k, v in self.elim_cost.iteritems()])
+            label += "\\n".join(
+                [
+                    "z%d: +%d (%d p / %s)"
+                    % (k, v, self.elim_pivots[k], elim_cost_to_dhm(v))
+                    for k, v in self.elim_cost.items()
+                ]
+            )
             label += "\\n"
         if self.cone.gen_pos_polynoms:
             label += "\\nFree cone:\\n"
@@ -345,37 +396,42 @@ class ReductionNode(object):
     @property
     def dot_str(self):
         dot_str = "  %d [style=filled,shape=box," % self.node_id
-        color_str = \
-            "#FFBB66" if self.parent_pivot_col is not None else \
-            "#9999FF" if self.is_test else \
-            "#CCCCCC"
-        dot_str += "color=\"%s\",fontsize=18," % color_str
-        dot_str += "label=\"%s\"];\n" % self.dot_label
+        color_str = (
+            "#FFBB66"
+            if self.parent_pivot_col is not None
+            else "#9999FF"
+            if self.is_test
+            else "#CCCCCC"
+        )
+        dot_str += 'color="%s",fontsize=18,' % color_str
+        dot_str += 'label="%s"];\n' % self.dot_label
         return dot_str
 
     def pivots_to_dot(self, next_id):
         dot_str = ""
-        for pivot_col, x in self.not_pivoted.iteritems():
+        for pivot_col, x in self.not_pivoted.items():
             var_id = self.cone.input_ids[pivot_col]
             if type(x) is PivotSet and x.worst_case_size >= 0:
                 label = "pivot(%d, %d)\\n" % (self.node_id, pivot_col)
                 label += "+%d\\n" % x.worst_case_size
                 label += "(%s)" % elim_cost_to_dhm(x.worst_case_size)
                 dot_str += "  %d -> %d [" % (self.node_id, next_id)
-                dot_str += "color=yellow,fontcolor=\"#FFBB66\",weight=2,"
-                dot_str += "label=\"z%d\"];\n" % var_id
+                dot_str += 'color=yellow,fontcolor="#FFBB66",weight=2,'
+                dot_str += 'label="z%d"];\n' % var_id
                 dot_str += "  %d [style=filled,color=" % next_id
-                dot_str += "yellow,label=\"%s\"]" % label
+                dot_str += 'yellow,label="%s"]' % label
             elif type(x) is UnknownSigns:
                 label = "\\n".join([str(e) for e in x.signs])
                 dot_str += "  %d -> %d [color=red," % (self.node_id, next_id)
-                dot_str += "fontcolor=red,weight=2,label=\"z%d\"];\n" % var_id
+                dot_str += 'fontcolor=red,weight=2,label="z%d"];\n' % var_id
                 dot_str += "  %d [style=filled,color=" % next_id
-                dot_str += "\"#FF9999\",label=\"%s\"];\n" % label
+                dot_str += '"#FF9999",label="%s"];\n' % label
             else:
                 assert type(x) is UnknownSign
-                print "Node %d needs to compute unknown signs (pivot_col=%d)" \
+                print(
+                    "Node %d needs to compute unknown signs (pivot_col=%d)"
                     % (self.node_id, pivot_col)
+                )
             next_id += 1
         return dot_str, next_id
 
@@ -387,7 +443,6 @@ class ReductionNode(object):
 
 
 class ReductionDAG(object):
-
     def __init__(self, cone=None, node=None, base_symbols=None):
         assert cone or node
         if cone is not None:
@@ -430,7 +485,7 @@ class ReductionDAG(object):
         def get_node_pools(node):
             other_pools = []
             my_pool = [] if node.is_test else [node]
-            for son in node.sons.itervalues():
+            for son in node.sons.values():
                 son_pool, other_pools2 = get_node_pools(son)
                 if node.is_test:
                     other_pools.append(son_pool)
@@ -440,13 +495,12 @@ class ReductionDAG(object):
             return my_pool, other_pools
 
         root_pool, other_pools = get_node_pools(self.root)
-        node_pools = filter(None, [root_pool] + other_pools)
+        node_pools = [_f for _f in [root_pool] + other_pools if _f]
         for pool in node_pools:
             node_pairs = ((n1, n2) for n1 in pool for n2 in pool)
             for (n1, n2) in node_pairs:
-                if n1.elim_set == n2.elim_set \
-                        and len(n1.cone.rows) < len(n2.cone.rows):
-                    print "Node %d <- Node %d" % (n2.node_id, n1.node_id)
+                if n1.elim_set == n2.elim_set and len(n1.cone.rows) < len(n2.cone.rows):
+                    print("Node %d <- Node %d" % (n2.node_id, n1.node_id))
                     pivot_col = n2.parent_pivot_col
                     n2.parent.sons[pivot_col] = n1
 
@@ -477,9 +531,9 @@ class ReductionDAG(object):
                 continue
             for pivot_col in node.get_pivot_cols():
                 if var_id is None or node.cone.input_ids[pivot_col] == var_id:
-                    print "dag.pivot(%d, %d)" % (node.node_id, pivot_col)
+                    print("dag.pivot(%d, %d)" % (node.node_id, pivot_col))
                     self.pivot(node.node_id, pivot_col)
-            nodes.extend(node.sons.values())
+            nodes.extend(list(node.sons.values()))
 
     def get_son_leaf_pivots(self, var_id, node_id=None):
         node_id = node_id if node_id is not None else 0
@@ -487,26 +541,31 @@ class ReductionDAG(object):
         input_ids = node.cone.input_ids
         node_pivots = node.get_pivot_cols()
         if not node.is_leaf:
-            son_pivots = [self.get_son_leaf_pivots(var_id, son.node_id)
-                          for son in node.sons.itervalues()]
+            son_pivots = [
+                self.get_son_leaf_pivots(var_id, son.node_id)
+                for son in node.sons.values()
+            ]
             return list(itertools.chain(*son_pivots))
-        return [(node_id, pivot_col) for pivot_col in node_pivots
-                if var_id is None or input_ids[pivot_col] == var_id]
+        return [
+            (node_id, pivot_col)
+            for pivot_col in node_pivots
+            if var_id is None or input_ids[pivot_col] == var_id
+        ]
 
     def pivot_leaves(self, var_id, root_id=None, ask_confirmation=True):
         root_id = 0 if root_id is None else root_id
         queue = self.get_son_leaf_pivots(var_id, root_id)
         total_size = 0
-        print "%d pivots to be performed:" % len(queue)
+        print("%d pivots to be performed:" % len(queue))
         for node_id, pivot_col in queue:
             node = self.nodes[node_id]
             pivot_size = node.not_pivoted[pivot_col].worst_case_size
-            print "- pivot(%d, %d): +%d" % (node_id, pivot_col, pivot_size)
+            print("- pivot(%d, %d): +%d" % (node_id, pivot_col, pivot_size))
             total_size += pivot_size
-        print "Estimated time: %s" % elim_cost_to_dhm(total_size)
-        if not ask_confirmation or raw_input("OK? [y/N] ") in ['y', 'Y']:
+        print("Estimated time: %s" % elim_cost_to_dhm(total_size))
+        if not ask_confirmation or input("OK? [y/N] ") in ["y", "Y"]:
             for node_id, pivot_col in queue:
-                print "dag.pivot(%d, %d)" % (node_id, pivot_col)
+                print("dag.pivot(%d, %d)" % (node_id, pivot_col))
                 self.pivot(node_id, pivot_col)
 
     def make_test(self, node_id, sign_expr):
@@ -523,14 +582,13 @@ class ReductionDAG(object):
         node = self.nodes[node_id]
         input_ids = node.cone.input_ids
         if not node.is_leaf:
-            for son in node.sons.itervalues():
+            for son in node.sons.values():
                 self.recursive_make_test_leaves(var_id, son.node_id)
         else:
             for pivot_col, pivot_usigns in node.get_usign_cols():
                 if var_id is None or input_ids[pivot_col] == var_id:
-                    usign_expr = node.find_best_test(
-                        pivot_col, self.base_symbols)
-                    print "Testing %s at node %d" % (usign_expr, node_id)
+                    usign_expr = node.find_best_test(pivot_col, self.base_symbols)
+                    print("Testing %s at node %d" % (usign_expr, node_id))
                     self.make_test(node_id, usign_expr)
                     return self.recursive_make_test_leaves(var_id, node_id)
 
@@ -546,7 +604,7 @@ class ReductionDAG(object):
         elim_cost = 0
         elim_pivots = 0
         for leaf in self.leaves:
-            for pcol, x in leaf.not_pivoted.iteritems():
+            for pcol, x in leaf.not_pivoted.items():
                 if leaf.cone.input_ids[pcol] == var_id:
                     assert type(x) is PivotSet, "make all tests first"
                     elim_cost += x.worst_case_size
@@ -578,33 +636,34 @@ class ReductionDAG(object):
         leaves_only : bool, optional
             If True, only leaf nodes are drawn.
         """
-        assert fname.endswith('.pdf')
+        assert fname.endswith(".pdf")
         for node in self.nodes:
             node.dotted = False
         root_id = root_id if root_id is not None else 0
-        if 'elim_cost' not in self.__dict__:
+        if "elim_cost" not in self.__dict__:
             self.elim_cost = {}
-        if 'elim_pivots' not in self.__dict__:
+        if "elim_pivots" not in self.__dict__:
             self.elim_pivots = {i: -1 for i in self.root.cone.input_ids}
         dot_str = ""
         if self.elim_cost:
             label = "DAG\\n\\n"
-            elim = [var_id
-                    for var_id, v in self.elim_cost.iteritems()
-                    if v == 0]
+            elim = [var_id for var_id, v in self.elim_cost.items() if v == 0]
             label += "\\n".join(["Eliminated z%d" % var_id for var_id in elim])
             label += "\\n\\n" if elim else "\\n"
-            label += "\\n".join([
-                "z%d: +%6d / %d leaves / %s" % (
-                    var_id, v, self.elim_pivots[var_id], elim_cost_to_dhm(v))
-                for var_id, v in self.elim_cost.iteritems()
-                if v > 0])
+            label += "\\n".join(
+                [
+                    "z%d: +%6d / %d leaves / %s"
+                    % (var_id, v, self.elim_pivots[var_id], elim_cost_to_dhm(v))
+                    for var_id, v in self.elim_cost.items()
+                    if v > 0
+                ]
+            )
             label += "\\n"
             dot_str += "  DAG [style=filled,shape=box,"
-            dot_str += "color=\"#AACCFF\",fontsize=24,"
-            dot_str += "label=\"%s\"];\n" % label
+            dot_str += 'color="#AACCFF",fontsize=24,'
+            dot_str += 'label="%s"];\n' % label
         dot_str += self.nodes[root_id].to_dot(leaves_only=leaves_only)[0]
         with open("graphviz.dot", "w") as f:
             f.write("digraph G {\n%s\n}\n" % dot_str)
-        os.system('dot -Tpdf graphviz.dot -o %s' % fname)
-        os.unlink('graphviz.dot')
+        os.system("dot -Tpdf graphviz.dot -o %s" % fname)
+        os.unlink("graphviz.dot")

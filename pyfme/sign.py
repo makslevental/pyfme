@@ -22,7 +22,6 @@ import sympy
 
 
 class UnknownSign(Exception):
-
     def __init__(self, expr=None):
         # default expr=None because of http://bugs.python.org/issue1692335
         self.expr = expr if expr else "?"

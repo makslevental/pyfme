@@ -21,11 +21,11 @@
 import logging
 import sympy
 
-import symparallel
-from sign import eval_sign as virgin_eval_sign
-from sign import has_unknown_sign as virgin_has_unknown_sign
-from sign import UnknownSign
-from symparallel import slice_and_pool
+from . import symparallel
+from .sign import eval_sign as virgin_eval_sign
+from .sign import has_unknown_sign as virgin_has_unknown_sign
+from .sign import UnknownSign
+from .symparallel import slice_and_pool
 
 
 def right_inverse(M):
@@ -77,7 +77,6 @@ class ConeRow(object):
 
 
 class PivotSet(object):
-
     def __init__(self, cone, pivot_col):
         self.cone = cone
         self.lbounds = []
@@ -111,28 +110,39 @@ class PivotSet(object):
         return len(self.lbounds) * len(self.ubounds) + len(self.rows)
 
     def compute_rows(self):
-        print "PivotSet: %d lower bounds" % len(self.lbounds),
-        print " and %d upper bounds" % len(self.ubounds)
+        print("PivotSet: %d lower bounds" % len(self.lbounds), end=" ")
+        print(" and %d upper bounds" % len(self.ubounds))
         init_rows = len(self.rows)
 
         for (li, lbound) in enumerate(self.lbounds):
             msg = "PivotSet: combinations for lower bound %d / %d" % (
-                li, len(self.lbounds))
+                li,
+                len(self.lbounds),
+            )
             input_list = self.ubounds
 
             def prepare_args(cur_ubounds):
-                return ((self.cone, self.officially_elim, self.pivot_col,
-                         self.pivot_input_id, lbound, ubound)
-                        for ubound in cur_ubounds)
+                return (
+                    (
+                        self.cone,
+                        self.officially_elim,
+                        self.pivot_col,
+                        self.pivot_input_id,
+                        lbound,
+                        ubound,
+                    )
+                    for ubound in cur_ubounds
+                )
 
             def callback(new_row):
                 if new_row is not None:
                     self.rows.append(new_row)
 
-            slice_and_pool(input_list, prepare_args, pivot_set_combine_bounds,
-                           callback, msg)
+            slice_and_pool(
+                input_list, prepare_args, pivot_set_combine_bounds, callback, msg
+            )
 
-        print "PivotSet => %d new rows" % (len(self.rows) - init_rows)
+        print("PivotSet => %d new rows" % (len(self.rows) - init_rows))
 
     def compute_cone(self):
         self.compute_rows()
@@ -156,7 +166,7 @@ def pivot_set_combine_bounds(args):
     v.simplify()  # needed for detection of implicit eliminations
 
     I = set.union(lrow.I, urow.I) - E
-    for i in xrange(cone.nb_inputs):
+    for i in range(cone.nb_inputs):
         input_id = cone.input_ids[i]
         if input_id in I or input_id in E:
             continue
@@ -211,10 +221,11 @@ class Cone(object):
         self.pos_polynoms = []
         self.unknown_sign_counts = {}
         if T is not None and M is not None:
-            return self.init_from_matrices(T, M)
+            self.init_from_matrices(T, M)
         elif origin is not None:
-            return self.init_from_origin(origin)
-        raise Exception("no empty constructor for Cone")
+            self.init_from_origin(origin)
+        else:
+            raise Exception("no empty constructor for Cone")
 
     def init_from_matrices(self, T, M):
         assert T.shape[1] == M.shape[1]
@@ -228,14 +239,14 @@ class Cone(object):
         K = sympy.Matrix(ker_dim, len(ker_basis), lambda i, j: ker_basis[j][i])
         assert (M * K).norm().simplify() == 0
 
-        U, V = T * K, T * Mrinv   # Constraint:  U * z + V * w  <= 0
-        W = U.row_join(V)         # Constraint:  W * [ z  w ] <= 0
+        U, V = T * K, T * Mrinv  # Constraint:  U * z + V * w  <= 0
+        W = U.row_join(V)  # Constraint:  W * [ z  w ] <= 0
         nb_rows = W.shape[0]
 
-        self.input_ids = range(len(ker_basis))
+        self.input_ids = list(range(len(ker_basis)))
         self.kohler_matrix = U
         self.officially_elim = set([])
-        self.rows = [ConeRow(W[i, :], H=set([i])) for i in xrange(nb_rows)]
+        self.rows = [ConeRow(W[i, :], H={i}) for i in range(nb_rows)]
 
         symparallel.simplify_rows_lcm(self.rows, self.pos_polynoms)
         symparallel.simplify_rows(self.rows)
@@ -250,7 +261,7 @@ class Cone(object):
         self.officially_elim = set(origin.officially_elim)
         self.pos_polynoms = list(origin.pos_polynoms)
         self.rows = list(origin.rows)
-        if 'unknown_sign_counts' not in origin.__dict__:
+        if "unknown_sign_counts" not in origin.__dict__:
             origin.unknown_sign_counts = {}
         self.unknown_sign_counts = dict(origin.unknown_sign_counts)
 
@@ -301,22 +312,22 @@ class Cone(object):
         return unknown_signs
 
     def count_signs(self):
-        if 'sign_count' not in self.__dict__:
+        if "sign_count" not in self.__dict__:
             self.sign_count = {}
         if self.sign_count:
             return self.sign_count
-        print "count_signs(%s)" % str(self)
+        print("count_signs(%s)" % str(self))
         for pivot_col, input_id in enumerate(self.input_ids):
-            self.sign_count[input_id] = {'+': 0, '-': 0, '?': 0, '0': 0}
+            self.sign_count[input_id] = {"+": 0, "-": 0, "?": 0, "0": 0}
             usign_set = set()
             for r in self.rows:
                 try:
                     expr = r.v[pivot_col]
                     sign = self.eval_sign(expr)
-                    c = '+' if sign > 0 else '-' if sign < 0 else '0'
+                    c = "+" if sign > 0 else "-" if sign < 0 else "0"
                     self.sign_count[input_id][c] += 1
                 except UnknownSign as e:
-                    self.sign_count[input_id]['?'] += 1
+                    self.sign_count[input_id]["?"] += 1
                     usign_set.add(e.expr.expand())
-            self.sign_count[input_id]['?u'] = len(usign_set)
+            self.sign_count[input_id]["?u"] = len(usign_set)
         return self.sign_count

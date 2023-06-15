@@ -18,10 +18,7 @@
 # You should have received a copy of the GNU Lesser General Public License along
 # with PyFME. If not, see <http://www.gnu.org/licenses/>.
 
-from cone import Cone
-from dag import ReductionDAG
+from .cone import Cone
+from .dag import ReductionDAG
 
-__all__ = [
-    'Cone',
-    'ReductionDAG'
-]
+__all__ = ["Cone", "ReductionDAG"]
